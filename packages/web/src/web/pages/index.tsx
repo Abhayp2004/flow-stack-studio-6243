@@ -762,80 +762,68 @@ ${result.thirdParty.map(t => `  • ${t.name} (${t.category}) — ${t.confidence
                       · {result.flowNodes.length} nodes · {result.flowEdges.length} connections
                     </span>
                   </div>
-                  <FlowDiagram nodes={result.flowNodes} edges={result.flowEdges} />
+                  <FlowDiagram nodes={result.flowNodes} edges={result.flowEdges} analysis={result} />
                 </div>
               </div>
             )}
 
             {/* ---- PAYLOAD TAB ---- */}
-            {activeTab === "payload" && (
-              <div className="animate-fade-in">
-                {(json || SAMPLE_JSON) ? (
-                  <div style={{ background: "#111113", border: "1px solid #2a2a2f", borderRadius: 10, padding: "20px 24px" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
-                      <Code2 size={15} color="#6e56cf" />
-                      <span style={{ fontSize: 14, fontWeight: 600, color: "#f0f0f2" }}>Payload Explorer</span>
-                      <div style={{
-                        marginLeft: 8,
-                        fontSize: 11,
-                        color: "#8b72e8",
-                        background: "rgba(110,86,207,0.1)",
-                        border: "1px solid rgba(110,86,207,0.2)",
-                        borderRadius: 4,
-                        padding: "2px 8px",
-                        fontFamily: "'JetBrains Mono', monospace",
-                      }}>
-                        {result.payloadHint}
-                      </div>
-                    </div>
-
-                    {/* Color key */}
-                    <div style={{ display: "flex", gap: 14, marginBottom: 14, flexWrap: "wrap" }}>
-                      {[
-                        { label: "key", color: "#8b72e8" },
-                        { label: "string", color: "#22c55e" },
-                        { label: "number", color: "#f59e0b" },
-                        { label: "boolean", color: "#06b6d4" },
-                        { label: "null", color: "#ef4444" },
-                      ].map(item => (
-                        <div key={item.label} style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                          <div style={{ width: 8, height: 8, borderRadius: 2, background: item.color }} />
-                          <span style={{ fontSize: 11, color: "#5a5a6a", fontFamily: "'JetBrains Mono', monospace" }}>{item.label}</span>
+            {activeTab === "payload" && (() => {
+              const payloadData = json || result.payloadSample;
+              return (
+                <div className="animate-fade-in">
+                  {payloadData ? (
+                    <div style={{ background: "#111113", border: "1px solid #2a2a2f", borderRadius: 10, padding: "20px 24px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
+                        <Code2 size={15} color="#6e56cf" />
+                        <span style={{ fontSize: 14, fontWeight: 600, color: "#f0f0f2" }}>Payload Explorer</span>
+                        <div style={{
+                          marginLeft: 8,
+                          fontSize: 11,
+                          color: json ? "#22c55e" : "#8b72e8",
+                          background: json ? "rgba(34,197,94,0.08)" : "rgba(110,86,207,0.1)",
+                          border: `1px solid ${json ? "rgba(34,197,94,0.2)" : "rgba(110,86,207,0.2)"}`,
+                          borderRadius: 4,
+                          padding: "2px 8px",
+                          fontFamily: "'JetBrains Mono', monospace",
+                        }}>
+                          {json ? "user-provided payload" : result.payloadHint}
                         </div>
-                      ))}
-                    </div>
+                      </div>
 
-                    <JsonTree json={json || SAMPLE_JSON} />
-                  </div>
-                ) : (
-                  <div style={{
-                    background: "#111113",
-                    border: "1px dashed #2a2a2f",
-                    borderRadius: 10,
-                    padding: "48px 24px",
-                    textAlign: "center",
-                  }}>
-                    <Code2 size={32} color="#2a2a2f" style={{ marginBottom: 12 }} />
-                    <div style={{ fontSize: 14, color: "#5a5a6a", marginBottom: 12 }}>No JSON payload provided</div>
-                    <button
-                      onClick={() => { setShowJsonInput(true); setResult(null); }}
-                      style={{
-                        background: "#1a1a1e",
-                        border: "1px solid #2a2a2f",
-                        borderRadius: 7,
-                        padding: "8px 16px",
-                        cursor: "pointer",
-                        color: "#8b8b99",
-                        fontSize: 13,
-                        fontFamily: "'Inter', sans-serif",
-                      }}
-                    >
-                      Go back and add JSON
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
+                      {/* Color key */}
+                      <div style={{ display: "flex", gap: 14, marginBottom: 14, flexWrap: "wrap" }}>
+                        {[
+                          { label: "key", color: "#8b72e8" },
+                          { label: "string", color: "#22c55e" },
+                          { label: "number", color: "#f59e0b" },
+                          { label: "boolean", color: "#06b6d4" },
+                          { label: "null", color: "#ef4444" },
+                        ].map(item => (
+                          <div key={item.label} style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                            <div style={{ width: 8, height: 8, borderRadius: 2, background: item.color }} />
+                            <span style={{ fontSize: 11, color: "#5a5a6a", fontFamily: "'JetBrains Mono', monospace" }}>{item.label}</span>
+                          </div>
+                        ))}
+                      </div>
+
+                      <JsonTree json={payloadData} />
+                    </div>
+                  ) : (
+                    <div style={{
+                      background: "#111113",
+                      border: "1px dashed #2a2a2f",
+                      borderRadius: 10,
+                      padding: "48px 24px",
+                      textAlign: "center",
+                    }}>
+                      <Code2 size={32} color="#2a2a2f" style={{ marginBottom: 12 }} />
+                      <div style={{ fontSize: 14, color: "#5a5a6a", marginBottom: 12 }}>No payload data available</div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         )}
       </main>

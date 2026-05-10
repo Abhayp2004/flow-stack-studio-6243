@@ -1,9 +1,10 @@
 import { useState } from "react";
-import type { FlowNode, FlowEdge } from "../../../../types";
+import type { FlowNode, FlowEdge, AnalysisResult } from "../../../../types";
 
 interface FlowDiagramProps {
   nodes: FlowNode[];
   edges: FlowEdge[];
+  analysis?: AnalysisResult;
 }
 
 const NODE_CFG: Record<FlowNode["type"], { bg: string; border: string; accent: string; glow: string; icon: string }> = {
@@ -46,7 +47,81 @@ function layoutNodes(nodes: FlowNode[]) {
   return positions;
 }
 
-export function FlowDiagram({ nodes, edges }: FlowDiagramProps) {
+function getNodeSignals(node: FlowNode, analysis: AnalysisResult): { label: string; value: string; dim?: boolean }[] {
+  const signals: { label: string; value: string; dim?: boolean }[] = [];
+
+  switch (node.type) {
+    case "browser":
+      signals.push({ label: "Entry point", value: "User's browser / client" });
+      signals.push({ label: "Protocol", value: "HTTPS" });
+      break;
+
+    case "cdn": {
+      const cdnInfra = analysis.infrastructure.filter(i => i.category.includes("CDN") || i.category.includes("Hosting") || i.category.includes("Edge"));
+      cdnInfra.forEach(i => signals.push({ label: i.category, value: i.name }));
+      if (cdnInfra.length === 0) signals.push({ label: "Note", value: node.description, dim: true });
+      break;
+    }
+
+    case "auth": {
+      if (analysis.authHint && !analysis.authHint.includes("not detectable")) {
+        signals.push({ label: "Auth hint", value: analysis.authHint });
+      }
+      const authTp = analysis.thirdParty.filter(t => t.category === "Auth / Identity");
+      authTp.forEach(t => signals.push({ label: "Provider", value: `${t.name} (${t.confidence} confidence)` }));
+      if (authTp.length === 0 && !analysis.authHint.includes("not detectable")) {
+        signals.push({ label: "Signal", value: "Auth cookies / session headers detected" });
+      }
+      break;
+    }
+
+    case "api":
+      signals.push({ label: "API type", value: analysis.apiType.name });
+      signals.push({ label: "Confidence", value: analysis.apiType.confidence });
+      signals.push({ label: "Details", value: analysis.apiType.details });
+      break;
+
+    case "db": {
+      const dbTp = analysis.thirdParty.filter(t => ["Database / BaaS", "Backend / BaaS"].includes(t.category));
+      dbTp.forEach(t => signals.push({ label: t.category, value: `${t.name} — ${t.evidence}` }));
+      if (dbTp.length === 0) signals.push({ label: "Note", value: "DB type inferred — not directly observable from static analysis.", dim: true });
+      break;
+    }
+
+    case "service": {
+      const svcInfra = analysis.infrastructure.filter(i => i.category.includes("Serverless") || i.category.includes("Runtime") || i.category.includes("Server"));
+      svcInfra.forEach(i => signals.push({ label: i.category, value: `${i.name} (${i.evidence})` }));
+      if (svcInfra.length === 0) signals.push({ label: "Note", value: node.description, dim: true });
+      break;
+    }
+
+    case "queue": {
+      const queueTp = analysis.thirdParty.filter(t => t.category === "Queue / Messaging");
+      queueTp.forEach(t => signals.push({ label: "Service", value: `${t.name} — ${t.evidence}` }));
+      if (queueTp.length === 0) signals.push({ label: "Note", value: node.description, dim: true });
+      break;
+    }
+
+    case "third-party": {
+      const match = analysis.thirdParty.find(t =>
+        t.name.toLowerCase().replace(/[^a-z0-9]/g, "-") === node.id ||
+        t.name.toLowerCase() === node.label.toLowerCase()
+      );
+      if (match) {
+        signals.push({ label: "Category", value: match.category });
+        signals.push({ label: "Evidence", value: match.evidence });
+        signals.push({ label: "Confidence", value: match.confidence });
+      } else {
+        signals.push({ label: "Note", value: node.description, dim: true });
+      }
+      break;
+    }
+  }
+
+  return signals;
+}
+
+export function FlowDiagram({ nodes, edges, analysis }: FlowDiagramProps) {
   const [activeNode, setActiveNode] = useState<string | null>(null);
   const positions = layoutNodes(nodes);
 
@@ -65,6 +140,10 @@ export function FlowDiagram({ nodes, edges }: FlowDiagramProps) {
   }
 
   const activeNodeData = activeNode ? nodes.find(n => n.id === activeNode) : null;
+
+  // Compute connections for active node
+  const incomingEdges = activeNode ? edges.filter(e => e.to === activeNode) : [];
+  const outgoingEdges = activeNode ? edges.filter(e => e.from === activeNode) : [];
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -145,7 +224,6 @@ export function FlowDiagram({ nodes, edges }: FlowDiagramProps) {
             const c = fromNode ? NODE_CFG[fromNode.type] : NODE_CFG["api"];
             const isActive = activeNode === edge.from || activeNode === edge.to;
 
-            // Cubic bezier — S-curve between columns
             const dx = to.x - from.x;
             const cx1 = from.x + dx * 0.55;
             const cx2 = to.x - dx * 0.55;
@@ -157,7 +235,6 @@ export function FlowDiagram({ nodes, edges }: FlowDiagramProps) {
 
             return (
               <g key={i}>
-                {/* Glow layer */}
                 {isActive && (
                   <path
                     d={d} fill="none"
@@ -167,7 +244,6 @@ export function FlowDiagram({ nodes, edges }: FlowDiagramProps) {
                     filter="url(#glow-sm)"
                   />
                 )}
-                {/* Main edge */}
                 <path
                   d={d} fill="none"
                   stroke={isActive ? c.accent : "#1e1e35"}
@@ -177,7 +253,6 @@ export function FlowDiagram({ nodes, edges }: FlowDiagramProps) {
                   strokeOpacity={isActive ? 1 : 0.6}
                   markerEnd={isActive ? `url(#arr-${fromNode?.type ?? "api"})` : "url(#arrow-dim)"}
                 />
-                {/* Label */}
                 {edge.label && (
                   <text
                     x={midX} y={midY - 8}
@@ -208,7 +283,6 @@ export function FlowDiagram({ nodes, edges }: FlowDiagramProps) {
                 onClick={() => setActiveNode(isActive ? null : node.id)}
                 style={{ cursor: "pointer" }}
               >
-                {/* Outer glow ring when active */}
                 {isActive && (
                   <rect
                     x={-5} y={-5} width={nodeW + 10} height={nodeH + 10}
@@ -218,7 +292,6 @@ export function FlowDiagram({ nodes, edges }: FlowDiagramProps) {
                   />
                 )}
 
-                {/* Node body */}
                 <rect
                   className="node-rect"
                   x={0} y={0} width={nodeW} height={nodeH}
@@ -229,18 +302,15 @@ export function FlowDiagram({ nodes, edges }: FlowDiagramProps) {
                   strokeOpacity={isActive ? 1 : 0.5}
                 />
 
-                {/* Left accent bar */}
                 <rect x={0} y={10} width={3} height={nodeH - 20} rx={2}
                   fill={c.accent} fillOpacity={isActive ? 1 : 0.8}
                   filter={isActive ? "url(#glow-sm)" : undefined}
                 />
 
-                {/* Icon */}
                 <text x={26} y={nodeH / 2 + 7} textAnchor="middle" fontSize="17">
                   {c.icon}
                 </text>
 
-                {/* Label */}
                 <text
                   x={42} y={nodeH / 2 - 6}
                   textAnchor="start"
@@ -250,7 +320,6 @@ export function FlowDiagram({ nodes, edges }: FlowDiagramProps) {
                   {node.label}
                 </text>
 
-                {/* Type chip */}
                 <text
                   x={42} y={nodeH / 2 + 12}
                   textAnchor="start"
@@ -266,42 +335,159 @@ export function FlowDiagram({ nodes, edges }: FlowDiagramProps) {
         </svg>
       </div>
 
-      {/* Active node detail */}
+      {/* Active node detail panel */}
       {activeNodeData && (() => {
         const c = NODE_CFG[activeNodeData.type];
+        const signals = analysis ? getNodeSignals(activeNodeData, analysis) : [];
+
         return (
           <div style={{
             background: "#0c0c1a",
             border: `1px solid ${c.border}`,
-            borderRadius: 12,
-            padding: "14px 18px",
-            display: "flex", alignItems: "flex-start", gap: 14,
-            boxShadow: `0 0 24px ${c.glow}`,
+            borderRadius: 14,
+            overflow: "hidden",
+            boxShadow: `0 0 28px ${c.glow}`,
           }}>
+            {/* Header */}
             <div style={{
-              width: 42, height: 42, borderRadius: 10,
-              background: c.bg, border: `1px solid ${c.border}`,
-              display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize: 20, flexShrink: 0,
+              display: "flex",
+              alignItems: "center",
+              gap: 14,
+              padding: "16px 20px",
+              borderBottom: `1px solid ${c.border}22`,
+              background: `${c.bg}cc`,
             }}>
-              {c.icon}
-            </div>
-            <div>
-              <div style={{ fontSize: 14, fontWeight: 700, color: "#ffffff", marginBottom: 4 }}>
-                {activeNodeData.label}
+              <div style={{
+                width: 44, height: 44, borderRadius: 11,
+                background: c.bg, border: `1px solid ${c.border}`,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 22, flexShrink: 0,
+                boxShadow: `0 0 12px ${c.glow}`,
+              }}>
+                {c.icon}
               </div>
-              <div style={{ fontSize: 13, color: "#8b8b99", lineHeight: 1.6 }}>
-                {activeNodeData.description}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: "#ffffff", marginBottom: 3 }}>
+                  {activeNodeData.label}
+                </div>
+                <div style={{
+                  display: "inline-flex", alignItems: "center", gap: 5,
+                  background: `${c.accent}18`, border: `1px solid ${c.accent}30`,
+                  borderRadius: 4, padding: "2px 8px",
+                  fontSize: 10, fontFamily: "'JetBrains Mono', monospace", fontWeight: 700,
+                  color: c.accent, letterSpacing: "0.08em",
+                }}>
+                  {activeNodeData.type.toUpperCase()}
+                </div>
               </div>
+              <button
+                onClick={() => setActiveNode(null)}
+                style={{
+                  background: "none", border: "none",
+                  cursor: "pointer", color: "#5a5a6a", fontSize: 22,
+                  padding: "0 4px", flexShrink: 0, lineHeight: 1,
+                }}
+              >×</button>
             </div>
-            <button
-              onClick={() => setActiveNode(null)}
-              style={{
-                marginLeft: "auto", background: "none", border: "none",
-                cursor: "pointer", color: "#5a5a6a", fontSize: 22,
-                padding: "0 4px", flexShrink: 0, lineHeight: 1,
-              }}
-            >×</button>
+
+            <div style={{ display: "grid", gridTemplateColumns: signals.length > 0 ? "1fr 1fr" : "1fr", gap: 0 }}>
+              {/* Description */}
+              <div style={{ padding: "16px 20px", borderRight: signals.length > 0 ? `1px solid ${c.border}22` : "none" }}>
+                <div style={{
+                  fontSize: 10, fontFamily: "'JetBrains Mono', monospace", color: "#3a3a50",
+                  letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 8,
+                }}>
+                  Description
+                </div>
+                <div style={{ fontSize: 13, color: "#8b8b99", lineHeight: 1.65 }}>
+                  {activeNodeData.description}
+                </div>
+
+                {/* Connections */}
+                {(incomingEdges.length > 0 || outgoingEdges.length > 0) && (
+                  <div style={{ marginTop: 16 }}>
+                    <div style={{
+                      fontSize: 10, fontFamily: "'JetBrains Mono', monospace", color: "#3a3a50",
+                      letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 8,
+                    }}>
+                      Connections
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                      {incomingEdges.map((e, i) => {
+                        const peer = nodes.find(n => n.id === e.from);
+                        const pc = peer ? NODE_CFG[peer.type] : NODE_CFG["api"];
+                        return (
+                          <div key={`in-${i}`} style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                            <span style={{ fontSize: 11, color: pc.accent, fontFamily: "'JetBrains Mono', monospace" }}>
+                              {peer?.label ?? e.from}
+                            </span>
+                            <span style={{ fontSize: 10, color: "#3a3a50" }}>→</span>
+                            <span style={{ fontSize: 11, color: c.accent, fontFamily: "'JetBrains Mono', monospace" }}>
+                              {activeNodeData.label}
+                            </span>
+                            {e.label && (
+                              <span style={{ fontSize: 10, color: "#5a5a6a", fontFamily: "'JetBrains Mono', monospace" }}>
+                                [{e.label}]
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
+                      {outgoingEdges.map((e, i) => {
+                        const peer = nodes.find(n => n.id === e.to);
+                        const pc = peer ? NODE_CFG[peer.type] : NODE_CFG["api"];
+                        return (
+                          <div key={`out-${i}`} style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                            <span style={{ fontSize: 11, color: c.accent, fontFamily: "'JetBrains Mono', monospace" }}>
+                              {activeNodeData.label}
+                            </span>
+                            <span style={{ fontSize: 10, color: "#3a3a50" }}>→</span>
+                            <span style={{ fontSize: 11, color: pc.accent, fontFamily: "'JetBrains Mono', monospace" }}>
+                              {peer?.label ?? e.to}
+                            </span>
+                            {e.label && (
+                              <span style={{ fontSize: 10, color: "#5a5a6a", fontFamily: "'JetBrains Mono', monospace" }}>
+                                [{e.label}]
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Signals */}
+              {signals.length > 0 && (
+                <div style={{ padding: "16px 20px" }}>
+                  <div style={{
+                    fontSize: 10, fontFamily: "'JetBrains Mono', monospace", color: "#3a3a50",
+                    letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 8,
+                  }}>
+                    Detection Signals
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    {signals.map((s, i) => (
+                      <div key={i}>
+                        <div style={{
+                          fontSize: 10, fontFamily: "'JetBrains Mono', monospace",
+                          color: c.accent, marginBottom: 2, opacity: s.dim ? 0.5 : 1,
+                        }}>
+                          {s.label}
+                        </div>
+                        <div style={{
+                          fontSize: 12, color: s.dim ? "#4a4a5a" : "#c0c0cc",
+                          lineHeight: 1.5, fontFamily: "'JetBrains Mono', monospace",
+                        }}>
+                          {s.value}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         );
       })()}

@@ -36,4 +36,5 @@ export interface AnalysisResult {
   flowNodes: FlowNode[];
   flowEdges: FlowEdge[];
   payloadHint: string;
+  payloadSample?: string;
 }

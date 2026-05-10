@@ -539,6 +539,178 @@ function buildFlow(
   return { nodes, edges };
 }
 
+// ─── payload sample ───────────────────────────────────────────────────────────
+
+function generateStackSample(
+  frontend: StackTech[],
+  thirdParty: StackTech[],
+  apiType: { name: string },
+  mode: "saas" | "ecommerce" | "blog",
+): string {
+  const names = (arr: StackTech[]) => arr.map(t => t.name);
+  const fw = names(frontend);
+  const tp = names(thirdParty);
+
+  // GraphQL
+  if (apiType.name.startsWith("GraphQL")) {
+    return JSON.stringify({
+      data: {
+        viewer: {
+          id: "usr_8f2k",
+          email: "user@example.com",
+          createdAt: "2024-01-10T08:00:00Z",
+          teams: [{ id: "team_abc", name: "Acme Corp", role: "admin" }],
+        },
+      },
+    }, null, 2);
+  }
+
+  // tRPC
+  if (apiType.name.startsWith("tRPC")) {
+    return JSON.stringify({
+      result: {
+        data: {
+          id: "item_01HZ",
+          title: "My first item",
+          status: "active",
+          createdAt: "2024-03-22T11:45:00Z",
+        },
+      },
+    }, null, 2);
+  }
+
+  // Supabase
+  if (tp.includes("Supabase") || tp.includes("Supabase Auth")) {
+    return JSON.stringify([
+      { id: 1, title: "Dashboard redesign", status: "in_progress", assignee_id: "usr_8f2k", created_at: "2024-05-01T09:00:00Z" },
+      { id: 2, title: "Fix auth flow", status: "done", assignee_id: "usr_9k3m", created_at: "2024-04-28T14:22:00Z" },
+    ], null, 2);
+  }
+
+  // Firebase / Firestore
+  if (tp.includes("Firebase") || tp.includes("Firebase Auth")) {
+    return JSON.stringify({
+      documents: [
+        {
+          name: "projects/my-app/databases/(default)/documents/users/usr_8f2k",
+          fields: {
+            email: { stringValue: "user@example.com" },
+            plan: { stringValue: "pro" },
+            createdAt: { timestampValue: "2024-01-10T08:00:00Z" },
+          },
+        },
+      ],
+    }, null, 2);
+  }
+
+  // Convex
+  if (tp.includes("Convex")) {
+    return JSON.stringify({
+      value: [
+        { _id: "jd7k2m8x9p", _creationTime: 1714000000000, title: "Q2 roadmap", body: "Focus on performance.", author: "usr_8f2k" },
+      ],
+      cursor: null,
+    }, null, 2);
+  }
+
+  // Shopify / ecommerce
+  if (tp.includes("Shopify") || fw.includes("Shopify") || mode === "ecommerce") {
+    return JSON.stringify({
+      product: {
+        id: "gid://shopify/Product/7891234567890",
+        title: "Premium Wireless Headphones",
+        handle: "premium-wireless-headphones",
+        status: "active",
+        variants: [{ id: "gid://shopify/ProductVariant/42", price: "129.00", sku: "HWLS-PRO-BLK", inventory_quantity: 48 }],
+        images: [{ src: "https://cdn.shopify.com/s/files/1/0123/product.jpg", width: 1200, height: 1200 }],
+      },
+    }, null, 2);
+  }
+
+  // WordPress / blog
+  if (fw.includes("WordPress") || mode === "blog") {
+    return JSON.stringify({
+      id: 42,
+      date: "2024-05-08T10:30:00",
+      slug: "getting-started-with-typescript",
+      status: "publish",
+      title: { rendered: "Getting Started with TypeScript" },
+      excerpt: { rendered: "<p>A beginner&#8217;s guide to TypeScript and type safety.</p>" },
+      author: 1,
+      categories: [3, 7],
+      _links: { self: [{ href: "https://example.com/wp-json/wp/v2/posts/42" }] },
+    }, null, 2);
+  }
+
+  // Generic SaaS fallback
+  return JSON.stringify({
+    event: "session.created",
+    id: "evt_01HZXK2M9BVCRP0Q5TNEJD3Y",
+    timestamp: "2024-05-08T14:32:11Z",
+    user: {
+      id: "usr_8f2k",
+      email: "alex@example.com",
+      plan: "pro",
+      metadata: { signup_source: "organic", country: "US" },
+    },
+    session: {
+      id: "ses_xk9q",
+      ip: "203.0.113.42",
+      user_agent: "Mozilla/5.0",
+      duration_ms: null,
+    },
+  }, null, 2);
+}
+
+async function fetchPayloadSample(
+  baseUrl: string,
+  frontend: StackTech[],
+  thirdParty: StackTech[],
+  apiType: { name: string; confidence: ConfidenceLevel; details: string },
+  mode: "saas" | "ecommerce" | "blog",
+): Promise<string> {
+  let origin: string;
+  try { origin = new URL(baseUrl).origin; } catch { return generateStackSample(frontend, thirdParty, apiType, mode); }
+
+  const fwNames = frontend.map(f => f.name);
+
+  // WordPress REST API
+  if (fwNames.includes("WordPress")) {
+    try {
+      const res = await fetch(`${origin}/wp-json/wp/v2/posts?per_page=1`, {
+        headers: { "User-Agent": UA },
+        signal: AbortSignal.timeout(5_000),
+      });
+      if (res.ok) {
+        const ct = res.headers.get("content-type") ?? "";
+        if (ct.includes("json")) {
+          const data = await res.json();
+          return JSON.stringify(data, null, 2);
+        }
+      }
+    } catch { /* ignore */ }
+  }
+
+  // Common health/status endpoints
+  for (const path of ["/api/health", "/api/ping", "/api/status", "/health", "/ping"]) {
+    try {
+      const res = await fetch(`${origin}${path}`, {
+        headers: { "User-Agent": UA },
+        signal: AbortSignal.timeout(4_000),
+      });
+      if (res.ok) {
+        const ct = res.headers.get("content-type") ?? "";
+        if (ct.includes("json")) {
+          const data = await res.json();
+          return JSON.stringify(data, null, 2);
+        }
+      }
+    } catch { /* ignore */ }
+  }
+
+  return generateStackSample(frontend, thirdParty, apiType, mode);
+}
+
 // ─── main export ──────────────────────────────────────────────────────────────
 
 export async function analyzeWebsite(rawUrl: string): Promise<AnalysisResult> {
@@ -551,6 +723,7 @@ export async function analyzeWebsite(rawUrl: string): Promise<AnalysisResult> {
   const authHint   = detectAuth(html, headers);
   const mode       = detectMode(finalUrl, html);
   const { nodes: flowNodes, edges: flowEdges } = buildFlow(infra, frontend, thirdParty, apiType.name, authHint);
+  const payloadSample = await fetchPayloadSample(finalUrl, frontend, thirdParty, apiType, mode);
 
   const signalCount = infra.length + frontend.length + thirdParty.length;
   const overallConfidence: ConfidenceLevel =
@@ -596,6 +769,7 @@ export async function analyzeWebsite(rawUrl: string): Promise<AnalysisResult> {
     thirdParty,
     flowNodes,
     flowEdges,
-    payloadHint: "Paste a sample JSON response above to explore the payload structure.",
+    payloadHint: "Stack-accurate payload sample — based on detected technologies.",
+    payloadSample,
   };
 }
