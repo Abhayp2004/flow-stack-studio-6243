@@ -9,7 +9,8 @@ import { ConfidenceBadge, ConfidenceDot } from "../components/confidence-badge";
 import { FlowDiagram } from "../components/flow-diagram";
 import { JsonTree } from "../components/json-tree";
 import { LoadingSteps } from "../components/loading-steps";
-import { analyzeUrl, SAMPLE_EXAMPLES, SAMPLE_JSON, type AnalysisResult } from "../lib/mock-analysis";
+import { SAMPLE_EXAMPLES, SAMPLE_JSON } from "../lib/mock-analysis";
+import type { AnalysisResult } from "../../../types";
 
 type Tab = "overview" | "flow" | "payload";
 
@@ -37,10 +38,16 @@ export default function Index() {
     setResult(null);
     setActiveTab("overview");
 
-    await new Promise(r => setTimeout(r, 2500));
-    const analysis = analyzeUrl(finalUrl);
-    setResult(analysis);
-    setIsLoading(false);
+    try {
+      const res = await fetch(`/api/analyze?url=${encodeURIComponent(finalUrl)}`);
+      if (!res.ok) throw new Error(`API error ${res.status}`);
+      const analysis: AnalysisResult = await res.json();
+      setResult(analysis);
+    } catch (err) {
+      console.error("[analyze]", err);
+    } finally {
+      setIsLoading(false);
+    }
   }, [url]);
 
   const handleExample = (exUrl: string) => {
