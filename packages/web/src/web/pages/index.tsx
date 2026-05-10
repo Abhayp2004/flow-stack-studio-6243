@@ -3,11 +3,13 @@ import {
   Globe, ChevronRight, Copy, Download, Moon, Sun,
   Layers, GitBranch, Code2, CheckCircle2, AlertCircle, Info,
   ExternalLink, TerminalSquare, Zap, ArrowRight, ChevronDown, ChevronUp,
+  Upload,
 } from "lucide-react";
 import { Logo } from "../components/logo";
 import { ConfidenceBadge, ConfidenceDot } from "../components/confidence-badge";
 import { FlowDiagram } from "../components/flow-diagram";
-import { JsonTree } from "../components/json-tree";
+import { SchemaExplorer } from "../components/schema-explorer";
+import { RequestImport } from "../components/request-import";
 import { LoadingSteps } from "../components/loading-steps";
 import { SAMPLE_EXAMPLES, SAMPLE_JSON } from "../lib/mock-analysis";
 import type { AnalysisResult } from "../../../types";
@@ -25,11 +27,18 @@ export default function Index() {
   const [url, setUrl] = useState("");
   const [json, setJson] = useState("");
   const [showJsonInput, setShowJsonInput] = useState(false);
+  const [importMode, setImportMode] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>("overview");
   const [copied, setCopied] = useState(false);
   const [showEvidence, setShowEvidence] = useState<Record<string, boolean>>({});
+
+  const handleImportResult = useCallback((imported: AnalysisResult) => {
+    setResult(imported);
+    setActiveTab("flow");
+    setImportMode(false);
+  }, []);
 
   const handleAnalyze = useCallback(async (targetUrl?: string) => {
     const finalUrl = targetUrl || url;
@@ -231,7 +240,43 @@ ${result.thirdParty.map(t => `  • ${t.name} (${t.category}) — ${t.confidence
             padding: 24,
             marginBottom: 16,
           }} className="animate-fade-in-up stagger-2">
-            {/* URL Input */}
+
+            {/* Mode toggle: Analyze URL / Import Request */}
+            <div style={{ display: "flex", gap: 6, background: "#0e0e10", border: "1px solid #2a2a2f", borderRadius: 9, padding: 4, marginBottom: 20, width: "fit-content" }}>
+              {[
+                { key: false, label: "Analyze URL", icon: <Globe size={13} /> },
+                { key: true,  label: "Import Request", icon: <Upload size={13} /> },
+              ].map(({ key, label, icon }) => (
+                <button
+                  key={String(key)}
+                  onClick={() => { setImportMode(key); setShowJsonInput(false); }}
+                  style={{
+                    background: importMode === key ? "#1a1a1e" : "none",
+                    border: importMode === key ? "1px solid #2a2a2f" : "1px solid transparent",
+                    borderRadius: 7,
+                    padding: "7px 16px",
+                    cursor: "pointer",
+                    color: importMode === key ? "#f0f0f2" : "#5a5a6a",
+                    fontSize: 13,
+                    fontWeight: importMode === key ? 600 : 400,
+                    fontFamily: "'Inter', sans-serif",
+                    display: "flex", alignItems: "center", gap: 7,
+                    transition: "all 0.15s ease",
+                  }}
+                >
+                  {icon}
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {/* Import Request mode */}
+            {importMode && (
+              <RequestImport onResult={handleImportResult} />
+            )}
+
+            {/* URL Input + JSON toggle (hidden in import mode) */}
+            {!importMode && (<>
             <div style={{ display: "flex", gap: 10, marginBottom: showJsonInput ? 16 : 0 }}>
               <div style={{
                 flex: 1,
@@ -358,6 +403,7 @@ ${result.thirdParty.map(t => `  • ${t.name} (${t.category}) — ${t.confidence
                 </button>
               </div>
             )}
+            </>)}
           </div>
         )}
 
@@ -530,7 +576,7 @@ ${result.thirdParty.map(t => `  • ${t.name} (${t.category}) — ${t.confidence
                 </button>
 
                 <button
-                  onClick={() => { setResult(null); setUrl(""); setJson(""); }}
+                  onClick={() => { setResult(null); setUrl(""); setJson(""); setImportMode(false); }}
                   style={{
                     background: "#1a1a1e",
                     border: "1px solid #2a2a2f",
@@ -807,7 +853,7 @@ ${result.thirdParty.map(t => `  • ${t.name} (${t.category}) — ${t.confidence
                         ))}
                       </div>
 
-                      <JsonTree json={payloadData} />
+                      <SchemaExplorer json={payloadData} />
                     </div>
                   ) : (
                     <div style={{
