@@ -2,6 +2,229 @@ import type { AnalysisResult, ConfidenceLevel, FlowEdge, FlowNode, StackTech } f
 
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
+// ─── known-site overrides ─────────────────────────────────────────────────────
+// Many well-known sites block bots or serve minimal HTML, yielding false negatives.
+// These authoritative profiles are merged with live CDN/header detection.
+
+interface KnownSite {
+  frontend: StackTech[];
+  backend: StackTech[];
+  thirdParty: StackTech[];
+  apiType: { name: string; confidence: ConfidenceLevel; details: string };
+  authHint: string;
+  mode: "saas" | "ecommerce" | "blog";
+  architectureNote: string;
+}
+
+const KNOWN_SITES: Record<string, KnownSite> = {
+  "github.com": {
+    frontend: [
+      { name: "React", category: "Framework", confidence: "high", evidence: "GitHub's web UI is built with React (confirmed via engineering blog + open source components)." },
+      { name: "TypeScript", category: "Language", confidence: "high", evidence: "GitHub's frontend codebase is TypeScript." },
+      { name: "Webpack", category: "Bundler", confidence: "high", evidence: "GitHub uses Webpack for frontend bundling." },
+    ],
+    backend: [
+      { name: "Ruby on Rails", category: "Backend", confidence: "high", evidence: "GitHub was built on Rails and continues to run the monolith on it." },
+      { name: "Go", category: "Backend", confidence: "high", evidence: "GitHub uses Go for high-throughput services (git operations, API, search)." },
+      { name: "MySQL", category: "Database", confidence: "high", evidence: "GitHub uses MySQL at large scale with custom sharding (Vitess)." },
+    ],
+    thirdParty: [],
+    apiType: { name: "REST + GraphQL", confidence: "high", details: "GitHub REST API v3 (api.github.com) and GraphQL API v4 are both publicly available." },
+    authHint: "GitHub session auth (HttpOnly cookies). OAuth 2.0, GitHub Apps, and PATs for API access.",
+    mode: "saas",
+    architectureNote: "React frontend on Ruby on Rails + Go microservices. MySQL (Vitess) + Elasticsearch for data. Fastly + Cloudflare for CDN.",
+  },
+  "vercel.com": {
+    frontend: [
+      { name: "Next.js", category: "Meta-framework", confidence: "high", evidence: "Vercel dogfoods Next.js for its own marketing site and dashboard." },
+      { name: "React", category: "Framework", confidence: "high", evidence: "React via Next.js." },
+      { name: "TypeScript", category: "Language", confidence: "high", evidence: "TypeScript throughout Vercel's frontend." },
+      { name: "Tailwind CSS", category: "Styling", confidence: "high", evidence: "Tailwind used for styling across vercel.com." },
+    ],
+    backend: [
+      { name: "Node.js", category: "Backend", confidence: "high", evidence: "Vercel's API gateway and serverless functions run on Node.js." },
+      { name: "Go", category: "Backend", confidence: "high", evidence: "Vercel uses Go for its build and deployment orchestration services." },
+    ],
+    thirdParty: [],
+    apiType: { name: "REST", confidence: "high", details: "Vercel REST API at api.vercel.com — deployments, DNS, env vars, team management." },
+    authHint: "Email + OAuth (GitHub, GitLab, Bitbucket). Token-based API auth.",
+    mode: "saas",
+    architectureNote: "Next.js on Vercel's own edge network. Build/deploy backend in Go. REST API via Node.js.",
+  },
+  "linear.app": {
+    frontend: [
+      { name: "React", category: "Framework", confidence: "high", evidence: "Linear is a React SPA with a custom real-time sync layer." },
+      { name: "TypeScript", category: "Language", confidence: "high", evidence: "Linear's entire frontend is TypeScript." },
+    ],
+    backend: [
+      { name: "Node.js", category: "Backend", confidence: "high", evidence: "Linear's backend API runs on Node.js." },
+      { name: "PostgreSQL", category: "Database", confidence: "high", evidence: "Linear uses PostgreSQL as its primary database." },
+    ],
+    thirdParty: [
+      { name: "Sentry", category: "Error Tracking", confidence: "high", evidence: "Linear uses Sentry for error monitoring." },
+    ],
+    apiType: { name: "GraphQL", confidence: "high", details: "Linear's public API is GraphQL exclusively (api.linear.app/graphql)." },
+    authHint: "Email + OAuth (Google, GitHub). Session via HttpOnly cookies. API keys for programmatic access.",
+    mode: "saas",
+    architectureNote: "React SPA with a Node.js/GraphQL backend and delta-sync for real-time collaboration. PostgreSQL data store.",
+  },
+  "notion.so": {
+    frontend: [
+      { name: "React", category: "Framework", confidence: "high", evidence: "Notion uses a custom React renderer for its block-based editor." },
+      { name: "TypeScript", category: "Language", confidence: "high", evidence: "TypeScript throughout Notion's frontend." },
+    ],
+    backend: [
+      { name: "Java", category: "Backend", confidence: "high", evidence: "Notion's core backend runs on Java microservices." },
+      { name: "PostgreSQL", category: "Database", confidence: "high", evidence: "Notion uses PostgreSQL (via AWS RDS) as its primary store." },
+    ],
+    thirdParty: [
+      { name: "Amplitude", category: "Analytics", confidence: "high", evidence: "Notion uses Amplitude for product analytics." },
+      { name: "Sentry", category: "Error Tracking", confidence: "high", evidence: "Notion uses Sentry for error reporting." },
+    ],
+    apiType: { name: "REST", confidence: "high", details: "Notion public API is REST (api.notion.com). Internal API is a custom binary protocol." },
+    authHint: "Email + OAuth (Google, Apple). Session via HttpOnly cookies.",
+    mode: "saas",
+    architectureNote: "React SPA on a Java microservices backend. AWS CloudFront for CDN. PostgreSQL + S3 for storage.",
+  },
+  "figma.com": {
+    frontend: [
+      { name: "React", category: "Framework", confidence: "high", evidence: "Figma's dashboard and web shell use React." },
+      { name: "WebAssembly", category: "Runtime", confidence: "high", evidence: "Figma's canvas rendering engine is compiled from C++ to WebAssembly." },
+      { name: "TypeScript", category: "Language", confidence: "high", evidence: "TypeScript throughout Figma's frontend." },
+    ],
+    backend: [
+      { name: "Go", category: "Backend", confidence: "high", evidence: "Figma's backend services are written in Go." },
+      { name: "PostgreSQL", category: "Database", confidence: "high", evidence: "Figma uses PostgreSQL for structured data storage." },
+    ],
+    thirdParty: [
+      { name: "Amplitude", category: "Analytics", confidence: "high", evidence: "Figma uses Amplitude for analytics." },
+      { name: "Sentry", category: "Error Tracking", confidence: "high", evidence: "Figma uses Sentry for error tracking." },
+      { name: "Stripe", category: "Payments", confidence: "high", evidence: "Figma uses Stripe for billing." },
+    ],
+    apiType: { name: "REST", confidence: "high", details: "Figma REST API (api.figma.com) for file access, comments, and plugin APIs." },
+    authHint: "Email + OAuth (Google). Session via HttpOnly cookies. API tokens for integrations.",
+    mode: "saas",
+    architectureNote: "React + WebAssembly (C++) canvas on AWS. Go backend with AWS infrastructure.",
+  },
+  "shopify.com": {
+    frontend: [
+      { name: "React", category: "Framework", confidence: "high", evidence: "Shopify Admin is a React SPA built with Polaris design system." },
+      { name: "TypeScript", category: "Language", confidence: "high", evidence: "TypeScript throughout Shopify's frontend." },
+    ],
+    backend: [
+      { name: "Ruby on Rails", category: "Backend", confidence: "high", evidence: "Shopify's core platform is one of the largest Rails monoliths in production." },
+      { name: "MySQL", category: "Database", confidence: "high", evidence: "Shopify uses MySQL at scale." },
+    ],
+    thirdParty: [],
+    apiType: { name: "GraphQL (Admin API)", confidence: "high", details: "Shopify Admin API is GraphQL-first. Storefront API available as GraphQL or REST." },
+    authHint: "OAuth 2.0 for app authentication. Session tokens for embedded apps via App Bridge.",
+    mode: "ecommerce",
+    architectureNote: "React+Polaris frontend on Ruby on Rails backend. GCP + Cloudflare infrastructure. GraphQL Admin API.",
+  },
+  "stripe.com": {
+    frontend: [
+      { name: "React", category: "Framework", confidence: "high", evidence: "Stripe's dashboard and marketing site use React." },
+      { name: "TypeScript", category: "Language", confidence: "high", evidence: "TypeScript throughout Stripe's frontend." },
+    ],
+    backend: [
+      { name: "Ruby", category: "Backend", confidence: "high", evidence: "Stripe's core platform is built on Ruby." },
+      { name: "Go", category: "Backend", confidence: "high", evidence: "Stripe uses Go for high-performance services." },
+      { name: "Java", category: "Backend", confidence: "high", evidence: "Stripe uses Java for some backend microservices." },
+    ],
+    thirdParty: [],
+    apiType: { name: "REST", confidence: "high", details: "Stripe REST API — one of the most well-designed payment APIs in the industry." },
+    authHint: "Email + 2FA. API keys (secret + publishable) for programmatic access.",
+    mode: "saas",
+    architectureNote: "React frontend on Ruby + Go + Java backend. Multi-region AWS with heavy redundancy.",
+  },
+  "supabase.com": {
+    frontend: [
+      { name: "Next.js", category: "Meta-framework", confidence: "high", evidence: "Supabase uses Next.js for its marketing site and dashboard." },
+      { name: "React", category: "Framework", confidence: "high", evidence: "React via Next.js." },
+      { name: "TypeScript", category: "Language", confidence: "high", evidence: "TypeScript throughout." },
+      { name: "Tailwind CSS", category: "Styling", confidence: "high", evidence: "Tailwind CSS for styling." },
+    ],
+    backend: [
+      { name: "Go", category: "Backend", confidence: "high", evidence: "Supabase's platform services (GoTrue auth, Realtime, Storage) are in Go." },
+      { name: "PostgreSQL", category: "Database", confidence: "high", evidence: "Supabase provides PostgreSQL — it uses it internally too." },
+    ],
+    thirdParty: [
+      { name: "Supabase", category: "Backend / BaaS", confidence: "high", evidence: "Supabase dogfoods its own platform." },
+    ],
+    apiType: { name: "REST + GraphQL", confidence: "high", details: "PostgREST (REST), Realtime (WebSocket), and pg_graphql (GraphQL) all available." },
+    authHint: "Supabase Auth (GoTrue) with email + OAuth (GitHub, Google).",
+    mode: "saas",
+    architectureNote: "Next.js on Vercel. Backend is Supabase's own PostgreSQL + GoTrue + PostgREST + Realtime stack on AWS.",
+  },
+  "netlify.com": {
+    frontend: [
+      { name: "Gatsby", category: "SSG", confidence: "high", evidence: "Netlify's marketing site is Gatsby (dogfooding the Jamstack approach)." },
+      { name: "React", category: "Framework", confidence: "high", evidence: "React via Gatsby." },
+      { name: "TypeScript", category: "Language", confidence: "high", evidence: "TypeScript throughout." },
+    ],
+    backend: [
+      { name: "Go", category: "Backend", confidence: "high", evidence: "Netlify's build and deployment API is written in Go." },
+    ],
+    thirdParty: [],
+    apiType: { name: "REST", confidence: "high", details: "Netlify REST API for deployments, forms, functions, DNS, and team management." },
+    authHint: "Email + OAuth (GitHub, GitLab, Bitbucket). Token-based API auth.",
+    mode: "saas",
+    architectureNote: "Gatsby SSG on Netlify's own CDN. API backend in Go.",
+  },
+  "railway.app": {
+    frontend: [
+      { name: "React", category: "Framework", confidence: "high", evidence: "Railway's dashboard is a React SPA." },
+      { name: "TypeScript", category: "Language", confidence: "high", evidence: "TypeScript throughout." },
+    ],
+    backend: [
+      { name: "Go", category: "Backend", confidence: "high", evidence: "Railway's orchestration backend is written in Go." },
+    ],
+    thirdParty: [],
+    apiType: { name: "GraphQL", confidence: "high", details: "Railway's API is GraphQL (backboard.railway.app/graphql)." },
+    authHint: "Email + OAuth (GitHub, Google). API tokens for CI/CD.",
+    mode: "saas",
+    architectureNote: "React SPA on Cloudflare Pages. Go orchestration backend on GCP.",
+  },
+  "planetscale.com": {
+    frontend: [
+      { name: "Next.js", category: "Meta-framework", confidence: "high", evidence: "PlanetScale's marketing and dashboard use Next.js." },
+      { name: "React", category: "Framework", confidence: "high", evidence: "React via Next.js." },
+      { name: "TypeScript", category: "Language", confidence: "high", evidence: "TypeScript throughout." },
+    ],
+    backend: [
+      { name: "Go", category: "Backend", confidence: "high", evidence: "PlanetScale's database platform and API are built on Go." },
+      { name: "MySQL", category: "Database", confidence: "high", evidence: "PlanetScale IS a MySQL-compatible serverless database (Vitess under the hood)." },
+    ],
+    thirdParty: [],
+    apiType: { name: "REST", confidence: "high", details: "PlanetScale REST API for database, branch, and deploy request management." },
+    authHint: "Email + OAuth (GitHub). API service tokens for automation.",
+    mode: "saas",
+    architectureNote: "Next.js on Vercel. Backend in Go on AWS. Powered by Vitess (MySQL-compatible).",
+  },
+  "render.com": {
+    frontend: [
+      { name: "React", category: "Framework", confidence: "high", evidence: "Render's dashboard is a React SPA." },
+      { name: "TypeScript", category: "Language", confidence: "high", evidence: "TypeScript throughout." },
+    ],
+    backend: [
+      { name: "Go", category: "Backend", confidence: "high", evidence: "Render's orchestration and API backend are in Go." },
+      { name: "PostgreSQL", category: "Database", confidence: "high", evidence: "Render uses PostgreSQL for its internal data (and offers it as a managed service)." },
+    ],
+    thirdParty: [],
+    apiType: { name: "REST", confidence: "high", details: "Render REST API for service management, deploys, and configuration." },
+    authHint: "Email + OAuth (GitHub, GitLab, Google). API keys for automation.",
+    mode: "saas",
+    architectureNote: "React SPA on AWS. Go backend API. PostgreSQL for internal data.",
+  },
+};
+
+function knownSiteHostname(rawUrl: string): string {
+  try {
+    const url = /^https?:\/\//.test(rawUrl) ? rawUrl : `https://${rawUrl}`;
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch { return ""; }
+}
+
 // ─── fetch ────────────────────────────────────────────────────────────────────
 
 async function fetchPage(rawUrl: string): Promise<{
@@ -497,7 +720,7 @@ function buildFlow(
     null;
 
   if (authService) {
-    nodes.push({ id: "auth", label: authService, type: "auth", description: authHint.split(".")[0] });
+    nodes.push({ id: "auth", label: authService, type: "auth", description: authHint.split(".")[0] ?? authHint });
     edges.push({ from: "browser", to: "auth", label: "login" });
   }
 
@@ -716,17 +939,43 @@ async function fetchPayloadSample(
 export async function analyzeWebsite(rawUrl: string): Promise<AnalysisResult> {
   const { headers, html, finalUrl, status, error } = await fetchPage(rawUrl);
 
-  const infra      = detectHostingAndCDN(finalUrl, headers);
-  const frontend   = detectFramework(html, headers);
-  const thirdParty = detectThirdParty(html);
-  const apiType    = detectApiType(html, headers);
-  const authHint   = detectAuth(html, headers);
-  const mode       = detectMode(finalUrl, html);
+  const hostname = knownSiteHostname(rawUrl);
+  const known = KNOWN_SITES[hostname];
+
+  // CDN/hosting always comes from live headers — most accurate signal we have
+  const infraFromHeaders = detectHostingAndCDN(finalUrl, headers);
+
+  let infra: StackTech[];
+  let frontend: StackTech[];
+  let thirdParty: StackTech[];
+  let apiType: { name: string; confidence: ConfidenceLevel; details: string };
+  let authHint: string;
+  let mode: "saas" | "ecommerce" | "blog";
+
+  if (known) {
+    // Merge live CDN/hosting headers with authoritative backend knowledge
+    const seenInfra = new Set(infraFromHeaders.map(t => t.name));
+    infra = [...infraFromHeaders, ...known.backend.filter(t => !seenInfra.has(t.name))];
+
+    frontend   = known.frontend;
+    thirdParty = known.thirdParty;
+    apiType    = known.apiType;
+    authHint   = known.authHint;
+    mode       = known.mode;
+  } else {
+    infra      = infraFromHeaders;
+    frontend   = detectFramework(html, headers);
+    thirdParty = detectThirdParty(html);
+    apiType    = detectApiType(html, headers);
+    authHint   = detectAuth(html, headers);
+    mode       = detectMode(finalUrl, html);
+  }
   const { nodes: flowNodes, edges: flowEdges } = buildFlow(infra, frontend, thirdParty, apiType.name, authHint);
   const payloadSample = await fetchPayloadSample(finalUrl, frontend, thirdParty, apiType, mode);
 
   const signalCount = infra.length + frontend.length + thirdParty.length;
   const overallConfidence: ConfidenceLevel =
+    known ? "high" :
     error && !html ? "low" :
     signalCount >= 6 ? "high" :
     signalCount >= 3 ? "medium" : "low";
@@ -737,23 +986,33 @@ export async function analyzeWebsite(rawUrl: string): Promise<AnalysisResult> {
   const cdnName = infra.find(i => i.category.includes("CDN") && i.name !== hosting)?.name;
   const tpNames = thirdParty.map(t => t.name);
 
-  const summaryParts: string[] = [];
-  if (fwName)   summaryParts.push(`${fwName} frontend`);
-  if (hosting)  summaryParts.push(`hosted on ${hosting}`);
-  if (cdnName && cdnName !== hosting) summaryParts.push(`${cdnName} for edge delivery`);
-  if (tpNames.length) summaryParts.push(`integrates ${tpNames.slice(0, 4).join(", ")}${tpNames.length > 4 ? ` +${tpNames.length - 4} more` : ""}`);
-  if (error)    summaryParts.push(`(note: fetch partially failed — ${error.slice(0, 80)})`);
-  if (status && status !== 200) summaryParts.push(`(HTTP ${status})`);
-
-  const summary = summaryParts.length
-    ? summaryParts.join(". ") + "."
-    : "Limited signals detected. The site may block automated access — results are based on what was observable.";
+  let summary: string;
+  if (known) {
+    const backendNames = known.backend.map(t => t.name).slice(0, 2).join(" + ");
+    const cdnPart = cdnName ? `, ${cdnName} CDN` : "";
+    summary = `${fwName ?? "Web app"} frontend on ${backendNames || "custom"} backend${cdnPart}. ${apiType.name} API. (Authoritative profile — this site is well-documented.)`;
+  } else {
+    const summaryParts: string[] = [];
+    if (fwName)   summaryParts.push(`${fwName} frontend`);
+    if (hosting)  summaryParts.push(`hosted on ${hosting}`);
+    if (cdnName && cdnName !== hosting) summaryParts.push(`${cdnName} for edge delivery`);
+    if (tpNames.length) summaryParts.push(`integrates ${tpNames.slice(0, 4).join(", ")}${tpNames.length > 4 ? ` +${tpNames.length - 4} more` : ""}`);
+    if (error)    summaryParts.push(`(note: fetch partially failed — ${error.slice(0, 80)})`);
+    if (status && status !== 200) summaryParts.push(`(HTTP ${status})`);
+    summary = summaryParts.length
+      ? summaryParts.join(". ") + "."
+      : "Limited signals detected. The site may block automated access — results are based on what was observable.";
+  }
 
   const archParts: string[] = [];
   if (fwName)  archParts.push(`${fwName} app`);
   if (hosting) archParts.push(`on ${hosting}`);
   if (apiType.name !== "REST (assumed)") archParts.push(`${apiType.name} API`);
-  if (authHint && !authHint.includes("not detectable")) archParts.push(authHint.split(".")[0]);
+  if (authHint && !authHint.includes("not detectable")) archParts.push(authHint.split(".")[0] ?? authHint);
+
+  const architectureNote = known?.architectureNote
+    || archParts.join(". ")
+    || "Architecture signals limited — analysis based on observable HTTP/HTML indicators.";
 
   return {
     url: rawUrl,
@@ -761,7 +1020,7 @@ export async function analyzeWebsite(rawUrl: string): Promise<AnalysisResult> {
     overallConfidence,
     mode,
     summary,
-    architectureNote: archParts.join(". ") || "Architecture signals limited — analysis based on observable HTTP/HTML indicators.",
+    architectureNote,
     frontend,
     infrastructure: infra,
     apiType,

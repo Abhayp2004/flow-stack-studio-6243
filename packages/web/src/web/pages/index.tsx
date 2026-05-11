@@ -1,15 +1,15 @@
 import { useState, useCallback } from "react";
+import { useLocation } from "wouter";
 import {
   Globe, ChevronRight, Copy, Download, Moon, Sun,
   Layers, GitBranch, Code2, CheckCircle2, AlertCircle, Info,
   ExternalLink, TerminalSquare, Zap, ArrowRight, ChevronDown, ChevronUp,
-  Upload,
 } from "lucide-react";
 import { Logo } from "../components/logo";
 import { ConfidenceBadge, ConfidenceDot } from "../components/confidence-badge";
 import { FlowDiagram } from "../components/flow-diagram";
 import { SchemaExplorer } from "../components/schema-explorer";
-import { RequestImport } from "../components/request-import";
+import { HeroBackground } from "../components/hero-background";
 import { LoadingSteps } from "../components/loading-steps";
 import { SAMPLE_EXAMPLES, SAMPLE_JSON } from "../lib/mock-analysis";
 import type { AnalysisResult } from "../../../types";
@@ -23,22 +23,16 @@ const MODE_COLORS = {
 };
 
 export default function Index() {
+  const [, navigate] = useLocation();
   const [darkMode, setDarkMode] = useState(true);
   const [url, setUrl] = useState("");
   const [json, setJson] = useState("");
   const [showJsonInput, setShowJsonInput] = useState(false);
-  const [importMode, setImportMode] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>("overview");
   const [copied, setCopied] = useState(false);
   const [showEvidence, setShowEvidence] = useState<Record<string, boolean>>({});
-
-  const handleImportResult = useCallback((imported: AnalysisResult) => {
-    setResult(imported);
-    setActiveTab("flow");
-    setImportMode(false);
-  }, []);
 
   const handleAnalyze = useCallback(async (targetUrl?: string) => {
     const finalUrl = targetUrl || url;
@@ -125,18 +119,45 @@ ${result.thirdParty.map(t => `  • ${t.name} (${t.category}) — ${t.confidence
     <div style={{
       minHeight: "100vh",
       background: "#0a0a0b",
+      backgroundImage: "url('/hero-bg.png')",
+      backgroundSize: "cover",
+      backgroundPosition: "center",
+      backgroundAttachment: "fixed",
       color: "#f0f0f2",
       fontFamily: "'Inter', sans-serif",
     }}>
+      {/* Dark image overlay */}
+      <div style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(6,6,9,0.82)",
+        pointerEvents: "none",
+        zIndex: 0,
+      }} />
+
+      {/* Vignette overlay */}
+      <div style={{
+        position: "fixed",
+        inset: 0,
+        background: "radial-gradient(ellipse at center, transparent 40%, rgba(4,4,7,0.7) 100%)",
+        pointerEvents: "none",
+        zIndex: 0,
+      }} />
+
+      <HeroBackground />
+
+      {/* Scan line */}
+      <div className="scan-line" />
+
+      {/* Content layer */}
+      <div style={{ position: "relative", zIndex: 2 }}>
+
       {/* Nav */}
-      <nav style={{
+      <nav className="glass-nav" style={{
         position: "sticky",
         top: 0,
         zIndex: 50,
         height: 56,
-        background: "rgba(10,10,11,0.92)",
-        backdropFilter: "blur(10px)",
-        borderBottom: "1px solid #1e1e22",
         display: "flex",
         alignItems: "center",
         padding: "0 24px",
@@ -171,7 +192,6 @@ ${result.thirdParty.map(t => `  • ${t.name} (${t.category}) — ${t.confidence
           >
             Examples
           </a>
-
           <button
             onClick={() => setDarkMode(!darkMode)}
             style={{
@@ -197,14 +217,14 @@ ${result.thirdParty.map(t => `  • ${t.name} (${t.category}) — ${t.confidence
         {!result && !isLoading && (
           <section style={{ paddingTop: 72, paddingBottom: 48, textAlign: "center" }} className="animate-fade-in-up">
             {/* Badge */}
-            <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "rgba(110,86,207,0.1)", border: "1px solid rgba(110,86,207,0.25)", borderRadius: 100, padding: "4px 12px", marginBottom: 24 }}>
+            <div className="badge-shimmer" style={{ display: "inline-flex", alignItems: "center", gap: 6, border: "1px solid rgba(110,86,207,0.35)", borderRadius: 100, padding: "4px 12px", marginBottom: 24 }}>
               <Zap size={12} color="#8b72e8" />
               <span style={{ fontSize: 12, color: "#8b72e8", fontFamily: "'JetBrains Mono', monospace", fontWeight: 600 }}>
                 DEVELOPER ANALYSIS TOOL
               </span>
             </div>
 
-            <h1 style={{
+            <h1 className="hero-glow" style={{
               fontSize: "clamp(30px, 5vw, 48px)",
               fontWeight: 700,
               lineHeight: 1.1,
@@ -222,64 +242,30 @@ ${result.thirdParty.map(t => `  • ${t.name} (${t.category}) — ${t.confidence
               fontSize: 16,
               color: "#8b8b99",
               maxWidth: 480,
-              margin: "0 auto 48px",
+              margin: "0 auto 32px",
               lineHeight: 1.6,
             }}>
               Paste a URL and instantly understand what powers it —
               stack, request flow, and data shape. Visual. Fast. Honest.
             </p>
+
+            <div className="accent-line" style={{ width: 120, marginBottom: 48 }} />
           </section>
         )}
 
         {/* Input Card */}
         {!result && !isLoading && (
           <div style={{
-            background: "#111113",
-            border: "1px solid #2a2a2f",
             borderRadius: 12,
             padding: 24,
             marginBottom: 16,
-          }} className="animate-fade-in-up stagger-2">
+          }} className="glow-card animate-fade-in-up stagger-2">
 
-            {/* Mode toggle: Analyze URL / Import Request */}
-            <div style={{ display: "flex", gap: 6, background: "#0e0e10", border: "1px solid #2a2a2f", borderRadius: 9, padding: 4, marginBottom: 20, width: "fit-content" }}>
-              {[
-                { key: false, label: "Analyze URL", icon: <Globe size={13} /> },
-                { key: true,  label: "Import Request", icon: <Upload size={13} /> },
-              ].map(({ key, label, icon }) => (
-                <button
-                  key={String(key)}
-                  onClick={() => { setImportMode(key); setShowJsonInput(false); }}
-                  style={{
-                    background: importMode === key ? "#1a1a1e" : "none",
-                    border: importMode === key ? "1px solid #2a2a2f" : "1px solid transparent",
-                    borderRadius: 7,
-                    padding: "7px 16px",
-                    cursor: "pointer",
-                    color: importMode === key ? "#f0f0f2" : "#5a5a6a",
-                    fontSize: 13,
-                    fontWeight: importMode === key ? 600 : 400,
-                    fontFamily: "'Inter', sans-serif",
-                    display: "flex", alignItems: "center", gap: 7,
-                    transition: "all 0.15s ease",
-                  }}
-                >
-                  {icon}
-                  {label}
-                </button>
-              ))}
-            </div>
-
-            {/* Import Request mode */}
-            {importMode && (
-              <RequestImport onResult={handleImportResult} />
-            )}
-
-            {/* URL Input + JSON toggle (hidden in import mode) */}
-            {!importMode && (<>
-            <div style={{ display: "flex", gap: 10, marginBottom: showJsonInput ? 16 : 0 }}>
+            {/* URL Input */}
+            <div style={{ display: "flex", gap: 10, marginBottom: showJsonInput ? 16 : 0, alignItems: "stretch", justifyContent: "center", flexWrap: "wrap" }}>
               <div style={{
-                flex: 1,
+                flex: "1 1 360px",
+                minWidth: 240,
                 display: "flex",
                 alignItems: "center",
                 background: "#0e0e10",
@@ -311,6 +297,39 @@ ${result.thirdParty.map(t => `  • ${t.name} (${t.category}) — ${t.confidence
                   }}
                 />
               </div>
+
+              <button
+                onClick={() => navigate("/api-builder")}
+                style={{
+                  background: "rgba(110,86,207,0.12)",
+                  border: "1px solid rgba(110,86,207,0.35)",
+                  borderRadius: 8,
+                  padding: "0 18px",
+                  fontSize: 14,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  color: "#8b72e8",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 7,
+                  minHeight: 44,
+                  whiteSpace: "nowrap",
+                  transition: "background 0.15s ease, border-color 0.15s ease",
+                  fontFamily: "'Inter', sans-serif",
+                }}
+                onMouseEnter={e => {
+                  (e.currentTarget as HTMLButtonElement).style.background = "rgba(110,86,207,0.22)";
+                  (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(110,86,207,0.55)";
+                }}
+                onMouseLeave={e => {
+                  (e.currentTarget as HTMLButtonElement).style.background = "rgba(110,86,207,0.12)";
+                  (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(110,86,207,0.35)";
+                }}
+              >
+                <Code2 size={14} />
+                API Builder
+              </button>
 
               <button
                 onClick={() => handleAnalyze()}
@@ -403,7 +422,6 @@ ${result.thirdParty.map(t => `  • ${t.name} (${t.category}) — ${t.confidence
                 </button>
               </div>
             )}
-            </>)}
           </div>
         )}
 
@@ -488,14 +506,128 @@ ${result.thirdParty.map(t => `  • ${t.name} (${t.category}) — ${t.confidence
           </section>
         )}
 
+        {/* Branding / Demo Section */}
+        {!result && !isLoading && (
+          <section style={{ paddingTop: 32, paddingBottom: 100 }} className="animate-fade-in-up stagger-4">
+            <div style={{ textAlign: "center", marginBottom: 56 }}>
+              <h2 style={{ fontSize: "clamp(28px, 4vw, 40px)", fontWeight: 700, letterSpacing: "-0.03em", color: "#f0f0f2", marginBottom: 16 }}>
+                Turn invisible APIs into visual clarity
+              </h2>
+              <p style={{ fontSize: 16, color: "#8b8b99", maxWidth: 540, margin: "0 auto", lineHeight: 1.6 }}>
+                Don't guess what your endpoint returns or how it's structured. Flow Stack Studio maps live apps, while API Builder turns sample data into ready endpoints, OpenAPI specs, and code.
+              </p>
+            </div>
+
+            <div style={{
+              background: "#ffffff",
+              borderRadius: 16,
+              overflow: "hidden",
+              boxShadow: "0 25px 50px -12px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.05)",
+              maxWidth: 720,
+              margin: "0 auto",
+            }}>
+              {/* Window Bar */}
+              <div style={{
+                background: "#1A202C",
+                padding: "16px 20px",
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+              }}>
+                <div style={{ width: 12, height: 12, borderRadius: "50%", background: "#FF5F56" }} />
+                <div style={{ width: 12, height: 12, borderRadius: "50%", background: "#FFBD2E" }} />
+                <div style={{ width: 12, height: 12, borderRadius: "50%", background: "#27C93F" }} />
+                <div style={{ flex: 1, textAlign: "center", color: "#718096", fontSize: 14, fontFamily: "'JetBrains Mono', monospace", marginLeft: -52 }}>
+
+                </div>
+              </div>
+
+              {/* Card Body */}
+              <div style={{ padding: "56px 48px", background: "#f8fafc", display: "flex", flexDirection: "column", alignItems: "center" }}>
+
+                {/* Input Block */}
+                <div style={{
+                  background: "#f4f8ff",
+                  border: "2px solid #c9deff",
+                  borderRadius: 16,
+                  padding: "24px",
+                  width: "100%",
+                }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: "#2563eb", marginBottom: 20, letterSpacing: "0.05em" }}>
+                    INPUT
+                  </div>
+                  <div style={{ fontFamily: "'JetBrains Mono', monospace", color: "#475569", fontSize: 15 }}>
+                    https://linear.app
+                  </div>
+                </div>
+
+                {/* Arrow */}
+                <div style={{ margin: "32px 0", color: "#60a5fa" }}>
+                  <ArrowRight size={36} strokeWidth={2.5} />
+                </div>
+
+                {/* API Builder Block */}
+                <div style={{
+                  background: "#fff7ed",
+                  border: "2px solid #fed7aa",
+                  borderRadius: 16,
+                  padding: "22px 24px",
+                  width: "100%",
+                  marginBottom: 24,
+                }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: "#ea580c", marginBottom: 14, letterSpacing: "0.05em" }}>
+                    API BUILDER
+                  </div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                    {["JSON", "OpenAPI", "Hono.js", "Drizzle"].map(label => (
+                      <span
+                        key={label}
+                        style={{
+                          background: "#ffedd5",
+                          border: "1px solid #fdba74",
+                          borderRadius: 8,
+                          color: "#9a3412",
+                          fontFamily: "'JetBrains Mono', monospace",
+                          fontSize: 13,
+                          fontWeight: 600,
+                          padding: "7px 10px",
+                        }}
+                      >
+                        {label}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Output Block */}
+                <div style={{
+                  background: "#f4fdf6",
+                  border: "2px solid #bdf4cf",
+                  borderRadius: 16,
+                  padding: "24px",
+                  width: "100%",
+                }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: "#16a34a", marginBottom: 20, letterSpacing: "0.05em" }}>
+                    VISUAL OUTPUT
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                    <div style={{ height: 44, background: "#dbeafe", borderRadius: 8, width: "100%" }} />
+                    <div style={{ height: 44, background: "#f3e8ff", borderRadius: 8, width: "100%" }} />
+                    <div style={{ height: 44, background: "#dcfce3", borderRadius: 8, width: "100%" }} />
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          </section>
+        )}
+
         {/* Results */}
         {result && !isLoading && (
           <div style={{ paddingTop: 20, paddingBottom: 64 }} className="animate-fade-in-up">
 
             {/* Summary bar */}
-            <div style={{
-              background: "#111113",
-              border: "1px solid #2a2a2f",
+            <div className="glow-card" style={{
               borderRadius: 10,
               padding: "14px 20px",
               display: "flex",
@@ -576,7 +708,7 @@ ${result.thirdParty.map(t => `  • ${t.name} (${t.category}) — ${t.confidence
                 </button>
 
                 <button
-                  onClick={() => { setResult(null); setUrl(""); setJson(""); setImportMode(false); }}
+                  onClick={() => { setResult(null); setUrl(""); setJson(""); }}
                   style={{
                     background: "#1a1a1e",
                     border: "1px solid #2a2a2f",
@@ -873,6 +1005,8 @@ ${result.thirdParty.map(t => `  • ${t.name} (${t.category}) — ${t.confidence
           </div>
         )}
       </main>
+
+      </div>{/* /content layer */}
 
       {/* Spin keyframe inline */}
       <style>{`
